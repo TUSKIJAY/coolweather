@@ -4,10 +4,14 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Build;
 import android.preference.PreferenceManager;
+import android.support.v4.view.GravityCompat;
+import android.support.v4.widget.DrawerLayout;
+import android.support.v4.widget.SwipeRefreshLayout;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -39,8 +43,11 @@ public class WeatherActivity extends AppCompatActivity {
     private TextView comfortText;
     private TextView carWashText;
     private TextView sportText;
-    private String mWeatherId;
     private ImageView bingPicImg;
+    public SwipeRefreshLayout swipeRefresh;
+    private String mWeatherId;
+    public DrawerLayout drawerLayout;
+    private Button navButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,6 +60,8 @@ public class WeatherActivity extends AppCompatActivity {
         }
         setContentView(R.layout.activity_weather);
         //初始化控件
+        drawerLayout = (DrawerLayout)findViewById(R.id.drawer_layout);
+        navButton = (Button)findViewById(R.id.nav_button);
         bingPicImg = (ImageView)findViewById(R.id.bing_pic_img);
         weatherLayout = (ScrollView)findViewById(R.id.weather_layout);
         titleCity = (TextView)findViewById(R.id.title_city);
@@ -65,19 +74,34 @@ public class WeatherActivity extends AppCompatActivity {
         comfortText = (TextView)findViewById(R.id.comfort_text);
         carWashText = (TextView)findViewById(R.id.car_wash);
         sportText = (TextView)findViewById(R.id.sport_text);
+        swipeRefresh = (SwipeRefreshLayout)findViewById(R.id.swipe_refresh);
+        swipeRefresh.setColorSchemeResources(R.color.colorPrimary);
 
+        navButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                drawerLayout.openDrawer(GravityCompat.START);
+            }
+        });
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         String weatherString = prefs.getString("weather",null);
         if (weatherString != null){
             //有缓存时直接解析天气数据
             Weather weather = Utility.handleWeatherResponse(weatherString);
+            mWeatherId = weather.basic.weatherId;
             showWeatherInfo(weather);
         }else{
             //无缓存时去服务器查询天气
-            String weatherId = getIntent().getStringExtra("weather_id");
+            mWeatherId = getIntent().getStringExtra("weather_id");
             weatherLayout.setVisibility(View.INVISIBLE);
-            requestWeather(weatherId);
+            requestWeather(mWeatherId);
         }
+        swipeRefresh.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
+            @Override
+            public void onRefresh() {
+                requestWeather(mWeatherId);
+            }
+        });
         String bingPic = prefs.getString("bing_pic",null);
         if (bingPic != null){
             Glide.with(this).load(bingPic).into(bingPicImg);
@@ -88,20 +112,9 @@ public class WeatherActivity extends AppCompatActivity {
     /**
      * 根据天气id请求城市天气信息
      */
-    public void requestWeather(final String weatherId){
+    public void requestWeather(final String weatherId) {
         String weatherUrl = "http://guolin.tech/api/weather?cityid=" + weatherId + "&key=bc0418b57b2d4918819d3974ac1285d9";
         HttpUtil.sendOkHttpRequest(weatherUrl, new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                e.printStackTrace();
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        Toast.makeText(WeatherActivity.this,"获取天气信息失败",Toast.LENGTH_SHORT).show();
-                    }
-                });
-            }
-
             @Override
             public void onResponse(Call call, Response response) throws IOException {
                 final String responseText = response.body().string();
@@ -109,15 +122,28 @@ public class WeatherActivity extends AppCompatActivity {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        if (weather != null && "ok".equals(weather.status)){
-                            SharedPreferences.Editor editor = PreferenceManager.
-                                    getDefaultSharedPreferences(WeatherActivity.this).edit();
-                            editor.putString("weather",responseText);
+                        if (weather != null && "ok".equals(weather.status)) {
+                            SharedPreferences.Editor editor = PreferenceManager.getDefaultSharedPreferences(WeatherActivity.this).edit();
+                            editor.putString("weather", responseText);
                             editor.apply();
+                            mWeatherId = weather.basic.weatherId;
                             showWeatherInfo(weather);
-                        }else {
-                            Toast.makeText(WeatherActivity.this,"获取天气信息失败",Toast.LENGTH_SHORT).show();
+                        } else {
+                            Toast.makeText(WeatherActivity.this, "获取天气信息失败", Toast.LENGTH_SHORT).show();
                         }
+                        swipeRefresh.setRefreshing(false);
+                    }
+                });
+            }
+
+            @Override
+            public void onFailure(Call call, IOException e) {
+                e.printStackTrace();
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Toast.makeText(WeatherActivity.this, "获取天气信息失败", Toast.LENGTH_SHORT).show();
+                        swipeRefresh.setRefreshing(false);
                     }
                 });
             }
